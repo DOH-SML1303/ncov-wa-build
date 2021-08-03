@@ -10164,3 +10164,6 @@ Canada/QC-1nJWFTV-3643537/2020
 
 # s1 mutations
 Netherlands/Flevoland_1/2020
+
+# s1 mutations
+Slovenia/296829/2021
