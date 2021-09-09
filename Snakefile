@@ -3,6 +3,7 @@ from datetime import date
 import os
 from pathlib import Path
 import sys
+from os import environ
 from socket import getfqdn
 from getpass import getuser
 from snakemake.logging import logger
@@ -10,6 +11,10 @@ from snakemake.utils import validate
 from collections import OrderedDict
 import textwrap
 import time
+
+# Set the maximum recursion limit globally for all shell commands, to avoid
+# issues with large trees crashing the workflow.
+shell.prefix("export AUGUR_RECURSION_LIMIT=10000; ")
 
 # Store the user's configuration prior to loading defaults, so we can check for
 # reused subsampling scheme names in the user's config. We need to make a deep
