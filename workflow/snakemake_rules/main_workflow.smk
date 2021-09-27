@@ -97,20 +97,16 @@ rule align:
         """
 
 rule diagnostic:
-    message: "Scanning aligned sequences {input.alignment} for problematic sequences"
+    message: "Scanning metadata {input.metadata} for problematic sequences. Removing sequences with >{params.clock_filter} deviation from the clock and with more than {params.snp_clusters}."
     input:
-        alignment = lambda wildcards: _get_path_for_input("aligned", wildcards.origin),
-        metadata = "results/sanitized_metadata_{origin}.tsv.xz",
-        reference = config["files"]["reference"]
+        metadata = "results/sanitized_metadata_{origin}.tsv.xz"
     output:
-        diagnostics = "results/sequence-diagnostics_{origin}.tsv.xz",
-        flagged = "results/flagged-sequences_{origin}.tsv.xz",
         to_exclude = "results/to-exclude_{origin}.txt"
+    params:
+        clock_filter = 20,
+        snp_clusters = 1
     log:
         "logs/diagnostics_{origin}.txt"
-    params:
-        mask_from_beginning = config["mask"]["mask_from_beginning"],
-        mask_from_end = config["mask"]["mask_from_end"]
     benchmark:
         "benchmarks/diagnostics_{origin}.txt"
     resources:
@@ -120,40 +116,23 @@ rule diagnostic:
     shell:
         """
         python3 scripts/diagnostic.py \
-            --alignment {input.alignment} \
             --metadata {input.metadata} \
-            --reference {input.reference} \
-            --mask-from-beginning {params.mask_from_beginning} \
-            --mask-from-end {params.mask_from_end} \
-            --output-flagged {output.flagged} \
-            --output-diagnostics {output.diagnostics} \
+            --clock-filter {params.clock_filter} \
+            --snp-clusters {params.snp_clusters} \
             --output-exclusion-list {output.to_exclude} 2>&1 | tee {log}
         """
 
-rule compress_exclusion_file:
-    input:
-        to_exclude="results/to-exclude_{origin}.txt"
-    output:
-        to_exclude="results/to-exclude_{origin}.txt.xz"
-    benchmark:
-        "benchmarks/compress_exclusion_file_{origin}.txt"
-    conda:
-        config["conda_environment"]
-    log:
-        "logs/compress_exclusion_file_{origin}.txt"
-    shell:
-        """
-        xz -c {input} > {output} 2> {log}
-        """
-
 def _collect_exclusion_files(wildcards):
-    # Note that we _always_ exclude the sequences from the (config-defined) exclude file
-    # As well as the sequences flagged by the diagnostic step.
-    # Note that we can skip the diagnostic step on a per-input (per-origin) basis.
-    exclude_files = [ config["files"]["exclude"] ]
-    if not config["filter"].get(wildcards["origin"], {}).get("skip_diagnostics", False):
-        exclude_files.append(_get_path_for_input("to-exclude", wildcards.origin))
-    return exclude_files
+    # This rule creates a per-input exclude file for `rule filter`. This file contains one or both of the following:
+    # (1) a config-defined exclude file
+    # (2) a dynamically created file (`rule diagnostic`) which scans the alignment for potential errors
+    # The second file is optional - it may be opted out via config → skip_diagnostics
+    # If the input starting point is "masked" then we also ignore the second file, as the alignment is not available
+    if config["filter"].get(wildcards["origin"], {}).get("skip_diagnostics", False):
+        return [ config["files"]["exclude"] ]
+    if "masked" in config["inputs"][wildcards["origin"]]:
+        return [ config["files"]["exclude"] ]
+    return [ config["files"]["exclude"], f"results/to-exclude_{wildcards['origin']}.txt" ]
 
 rule mask:
     message:
@@ -283,9 +262,13 @@ def get_priorities(wildcards):
 
 def get_priority_argument(wildcards):
     subsampling_settings = _get_subsampling_settings(wildcards)
+    if "priorities" not in subsampling_settings:
+        return ""
 
-    if "priorities" in subsampling_settings and subsampling_settings["priorities"]["type"] == "proximity":
+    if subsampling_settings["priorities"]["type"] == "proximity":
         return "--priority " + get_priorities(wildcards)
+    elif subsampling_settings["priorities"]["type"] == "file" and "file" in subsampling_settings["priorities"]:
+        return "--priority " + subsampling_settings["priorities"]["file"]
     else:
         return ""
 
@@ -581,6 +564,24 @@ rule build_align:
             --output-basename {params.basename} \
             --output-fasta {output.alignment} \
             --output-insertions {output.insertions} > {log} 2>&1
+        """
+
+rule compress_build_align:
+    message:
+        """Compressing {input.alignment}"""
+    input:
+        alignment = "results/{build_name}/aligned.fasta"
+    output:
+        alignment = "results/{build_name}/aligned.fasta.xz"
+    benchmark:
+        "benchmarks/compress_build_align_{build_name}.txt"
+    conda:
+        config["conda_environment"]
+    log:
+        "logs/compress_build_align_{build_name}.txt"
+    shell:
+        """
+        xz -c {input} > {output} 2> {log}
         """
 
 if "run_pangolin" in config and config["run_pangolin"]:
@@ -1065,7 +1066,7 @@ rule tip_frequencies:
     benchmark:
         "benchmarks/tip_frequencies_{build_name}.txt"
     params:
-        min_date = config["frequencies"]["min_date"],
+        min_date = _get_min_date_for_frequencies,
         max_date = _get_max_date_for_frequencies,
         pivot_interval = config["frequencies"]["pivot_interval"],
         pivot_interval_units = config["frequencies"]["pivot_interval_units"],
@@ -1226,10 +1227,33 @@ rule add_branch_labels:
             --output {output.auspice_json}
         """
 
+rule include_hcov19_prefix:
+    message: "Rename strains to include hCoV-19/ prefix"
+    input:
+        auspice_json = rules.add_branch_labels.output.auspice_json,
+        tip_frequencies = rules.tip_frequencies.output.tip_frequencies_json
+    output:
+        auspice_json = "results/{build_name}/ncov_with_hcov19_prefix.json",
+        tip_frequencies = "results/{build_name}/tip-frequencies_with_hcov19_prefix.json"
+    log:
+        "logs/include_hcov19_prefix{build_name}.txt"
+    conda: config["conda_environment"]
+    params:
+        prefix = lambda w: "hCoV-19/" if config.get("include_hcov19_prefix", False) else ""
+    shell:
+        """
+        python3 ./scripts/include_prefix.py \
+            --input-auspice {input.auspice_json} \
+            --input-tip-frequencies {input.tip_frequencies} \
+            --prefix {params.prefix} \
+            --output-auspice {output.auspice_json} \
+            --output-tip-frequencies {output.tip_frequencies}
+        """
+
 rule incorporate_travel_history:
     message: "Adjusting main auspice JSON to take into account travel history"
     input:
-        auspice_json = rules.add_branch_labels.output.auspice_json,
+        auspice_json = rules.include_hcov19_prefix.output.auspice_json,
         colors = lambda w: config["builds"][w.build_name]["colors"] if "colors" in config["builds"][w.build_name] else ( config["files"]["colors"] if "colors" in config["files"] else rules.colors.output.colors.format(**w) ),
         lat_longs = config["files"]["lat_longs"]
     params:
@@ -1256,8 +1280,8 @@ rule incorporate_travel_history:
 rule finalize:
     message: "Remove extraneous colorings for main build and move frequencies"
     input:
-        auspice_json = lambda w: rules.add_branch_labels.output.auspice_json if config.get("skip_travel_history_adjustment", False) else rules.incorporate_travel_history.output.auspice_json,
-        frequencies = rules.tip_frequencies.output.tip_frequencies_json,
+        auspice_json = lambda w: rules.include_hcov19_prefix.output.auspice_json if config.get("skip_travel_history_adjustment", False) else rules.incorporate_travel_history.output.auspice_json,
+        frequencies = rules.include_hcov19_prefix.output.tip_frequencies,
         root_sequence_json = rules.export.output.root_sequence_json
     output:
         auspice_json = f"auspice/{config['auspice_json_prefix']}_{{build_name}}.json",
