@@ -84,3 +84,8 @@ Community Sample
 infection
 Traveler
 Overseas Case
+Infection
+Other: local case
+Other: local
+Other: Patient Sample
+Out of State
