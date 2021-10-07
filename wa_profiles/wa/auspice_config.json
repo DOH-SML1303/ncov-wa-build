@@ -1,7 +1,7 @@
 {
-  "build_url": "https://github.com/blab/ncov-wa-build/",
+  "build_url": "https://github.com/stephlunn/ncov-wa-build/",
   "maintainers": [
-    {"name": "Cassia Wagner", "url": "https://github.com/cassiawag"}
+    {"name": "Steph Lunn, MPH, MS", "url": "https://github.com/stephlunn"}
   ],
   "colorings": [
     {

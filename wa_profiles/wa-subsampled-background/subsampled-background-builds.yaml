@@ -1,11 +1,23 @@
 # Update input location as needed.
 inputs:
-  - name: washington
-    metadata: "data/wa.metadata.tsv.xz"
-    sequences: "data/wa.sequences.fasta.xz"
+  - name: wa-seq01
+    metadata: "data/wa-sequences01.tar"
+    sequences: "data/wa-sequences01.tar"
+  - name: wa-seq02
+    metadata: "data/wa-sequences02.tar"
+    sequences: "data/wa-sequences02.tar"
+  - name: wa-seq03
+    metadata: "data/wa-sequences03.tar"
+    sequences: "data/wa-sequences03.tar"
+  - name: wa-seq04
+    metadata: "data/wa-sequences04.tar"
+    sequences: "data/wa-sequences04.tar"
+  - name: wa-seq05
+    metadata: "data/wa-sequences05.tar"
+    sequences: "data/wa-sequences05.tar"
   - name: contextual
-    metadata: "data/ncov_north-america.tar.gz"
-    sequences: "data/ncov_north-america.tar.gz"
+    metadata: "data/hcov_north-america.tar.gz"
+    sequences: "data/hcov_north-america.tar.gz"
 
 # Defines next align specs
 genes: ["ORF1a", "ORF1b", "S", "ORF3a", "M", "N"]
@@ -23,23 +35,19 @@ files:
 
 # Define WA builds.
 builds:
-  wa_2m:
+  wa_two_mon:
     title: "Washington-focused SARS-CoV-2 genomic analysis: Past two months"
     colors: wa_profiles/wa/colors.tsv
     description: wa_profiles/wa/descriptions/two-months_description.md
     division: Washington
     subsampling_scheme: two-month-priority
 
-  wa_4m:
+  wa_four_mon:
     title: "Washington-focused SARS-CoV-2 genomic analysis: Past four months"
     colors: wa_profiles/wa/colors.tsv
     description: wa_profiles/wa/descriptions/four-months_description.md
     division: Washington
     subsampling_scheme: four-month-priority
-
-# remove S dropout sequences and sequences without division label in US
-filter:
-  exclude_where: "division='USA' purpose_of_sequencing='S dropout'"
 
 # Define subsampling scheme for builds. This scheme should include as much
 # local diversity for a given division as possible and contextual samples from
@@ -47,7 +55,7 @@ filter:
 subsampling:
   two-month-priority:
     local-focus:
-      min_date: --min-date {earliest_date}
+  #    min_date: --min-date {earliest_date}      
       query: --query "(country == 'USA' & division == '{division}')"
     # Included to accurately reconstruct # of introductions
     contextual-proximity:
@@ -64,9 +72,8 @@ subsampling:
 
   four-month-priority:
     local-focus:
-      min_date: --min-date {earliest_date}
+#      min_date: --min-date {earliest_date}
       query: --query "(country == 'USA' & division == '{division}')"
-      max_sequences: 3000
     # Included to accurately reconstruct # of introductions.
     contextual-proximity:
       max_sequences: 1500
@@ -79,3 +86,7 @@ subsampling:
       max_sequences: 500
       group_by: "month year"
       query: --query "contextual == 'yes'"
+
+# This change tells TreeTime to estimate a constant coalescent rate for the tree instead of a piecewise linear rate (i.e., the “skyline” estimation).
+refine:
+  coalescent: opt
